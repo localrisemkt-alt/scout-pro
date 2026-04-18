@@ -1,7 +1,7 @@
 {
   "name": "scout-pro",
   "version": "1.0.0",
-  "description": "Plataforma de Analise de Futebol",
+  "description": "Plataforma de Estatísticas Scout Pro",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
