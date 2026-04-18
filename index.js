@@ -16,16 +16,41 @@ const todasVip = [...ligasPrincipais, ...ligasSecundarias];
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 // ==========================================
-// DISFARCE DE NAVEGADOR (ANTI-BLOCK SOFASCORE)
+// DISFARCE DE NAVEGADOR (ANTI-BLOCK)
 // ==========================================
 const headersDisfarce = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
     'Origin': 'https://www.sofascore.com',
     'Referer': 'https://www.sofascore.com/',
     'Cache-Control': 'no-cache'
 };
+
+// ==========================================
+// MOTOR DE BUSCA BLINDADO (TÚNEL PROXY)
+// ==========================================
+// Este motor tenta 3 caminhos diferentes para fugir da Cloudflare
+async function fetchSofaScore(url) {
+    try {
+        const res = await axios.get(url, { headers: headersDisfarce, timeout: 3000 });
+        return res.data;
+    } catch (e1) {
+        try {
+            const proxy1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            const res1 = await axios.get(proxy1, { headers: headersDisfarce, timeout: 6000 });
+            return res1.data;
+        } catch (e2) {
+            try {
+                const proxy2 = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                const res2 = await axios.get(proxy2, { headers: headersDisfarce, timeout: 6000 });
+                return res2.data;
+            } catch (e3) {
+                return null;
+            }
+        }
+    }
+}
 
 // ==========================================
 // MATEMÁTICA AVANÇADA (POISSON)
@@ -144,50 +169,43 @@ const cabecalhoHTML = (titulo) => `
 const rodapeHTML = `</div></body></html>`;
 
 // ==========================================
-// FUNÇÕES DA API E AUXILIARES (COM DISFARCE)
+// FUNÇÕES DE EXTRAÇÃO (USANDO O NOVO MOTOR BLINDADO)
 // ==========================================
 async function buscarJogosDoDia(data) {
-    try {
-        const url = `https://api.sofascore.com/api/v1/sport/football/scheduled-events/${data}`;
-        const res = await axios.get(url, { headers: headersDisfarce });
-        return res.data.events || [];
-    } catch (e) {
-        console.error("Erro API Jogos:", e.message);
-        return []; 
-    }
+    const dataObj = await fetchSofaScore(`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${data}`);
+    return dataObj && dataObj.events ? dataObj.events : [];
 }
 
 async function puxarEstatisticasEquipe(teamId, tournamentId, seasonId) {
     const d = { fez: 0, sofreu: 0, cantos: 0, chutes: 0, cartoes: 0 };
     if (!teamId || !tournamentId || !seasonId) return d;
-    try {
-        const url = `https://api.sofascore.com/api/v1/team/${teamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`;
-        const res = await axios.get(url, { headers: headersDisfarce });
-        const s = res.data.statistics; const m = s.matches || 1;
-        return { 
-            fez: parseFloat((s.goalsScored / m).toFixed(2)), 
-            sofreu: parseFloat((s.goalsConceded / m).toFixed(2)), 
-            cantos: parseFloat((s.corners / m).toFixed(2)), 
-            chutes: parseFloat(((s.shots || s.totalShots || 0) / m).toFixed(2)), 
-            cartoes: parseFloat((s.yellowCards / m).toFixed(2)) 
-        };
-    } catch (e) { return d; }
+    
+    const dataObj = await fetchSofaScore(`https://api.sofascore.com/api/v1/team/${teamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`);
+    if (!dataObj || !dataObj.statistics) return d;
+    
+    const s = dataObj.statistics; const m = s.matches || 1;
+    return { 
+        fez: parseFloat((s.goalsScored / m).toFixed(2)), 
+        sofreu: parseFloat((s.goalsConceded / m).toFixed(2)), 
+        cantos: parseFloat((s.corners / m).toFixed(2)), 
+        chutes: parseFloat(((s.shots || s.totalShots || 0) / m).toFixed(2)), 
+        cartoes: parseFloat((s.yellowCards / m).toFixed(2)) 
+    };
 }
 
 async function puxarFormaGols(teamId) {
-    try {
-        const url = `https://api.sofascore.com/api/v1/team/${teamId}/events/last/0`;
-        const res = await axios.get(url, { headers: headersDisfarce });
-        const eventos = res.data.events.filter(e => e.status.type === 'finished').slice(0, 5);
-        if (eventos.length === 0) return { fez: 0, sofreu: 0 };
-        
-        let gFez = 0; let gSofreu = 0;
-        eventos.forEach(e => {
-            if (e.homeTeam.id == teamId) { gFez += e.homeScore.current || 0; gSofreu += e.awayScore.current || 0; } 
-            else { gFez += e.awayScore.current || 0; gSofreu += e.homeScore.current || 0; }
-        });
-        return { fez: parseFloat((gFez / eventos.length).toFixed(2)), sofreu: parseFloat((gSofreu / eventos.length).toFixed(2)) };
-    } catch (e) { return { fez: 0, sofreu: 0 }; }
+    const dataObj = await fetchSofaScore(`https://api.sofascore.com/api/v1/team/${teamId}/events/last/0`);
+    if (!dataObj || !dataObj.events) return { fez: 0, sofreu: 0 };
+    
+    const eventos = dataObj.events.filter(e => e.status.type === 'finished').slice(0, 5);
+    if (eventos.length === 0) return { fez: 0, sofreu: 0 };
+    
+    let gFez = 0; let gSofreu = 0;
+    eventos.forEach(e => {
+        if (e.homeTeam.id == teamId) { gFez += e.homeScore.current || 0; gSofreu += e.awayScore.current || 0; } 
+        else { gFez += e.awayScore.current || 0; gSofreu += e.homeScore.current || 0; }
+    });
+    return { fez: parseFloat((gFez / eventos.length).toFixed(2)), sofreu: parseFloat((gSofreu / eventos.length).toFixed(2)) };
 }
 
 function filtrarJogosPorCategoria(jogos, categoria) {
@@ -245,7 +263,7 @@ app.get('/', async (req, res) => {
             </form>
         </div>`;
 
-    if(Object.keys(agrupados).length === 0) html += "<p style='text-align:center; color:#888; margin-top:40px;'>Nenhum jogo disponível ou todos já foram encerrados.</p>";
+    if(Object.keys(agrupados).length === 0) html += "<p style='text-align:center; color:#888; margin-top:40px;'>Nenhum jogo disponível ou todos já foram encerrados (Ou servidor temporariamente bloqueado).</p>";
 
     for (const liga in agrupados) {
         html += `<div class="liga-card"><div class="liga-nome">🏆 ${liga}</div>`;
