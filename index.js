@@ -16,6 +16,18 @@ const todasVip = [...ligasPrincipais, ...ligasSecundarias];
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 // ==========================================
+// DISFARCE DE NAVEGADOR (ANTI-BLOCK SOFASCORE)
+// ==========================================
+const headersDisfarce = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Origin': 'https://www.sofascore.com',
+    'Referer': 'https://www.sofascore.com/',
+    'Cache-Control': 'no-cache'
+};
+
+// ==========================================
 // MATEMÁTICA AVANÇADA (POISSON)
 // ==========================================
 function calcProbOver(linha, projecao) {
@@ -36,9 +48,9 @@ function calcProbBTTS(projH, projA) {
 }
 
 function tendencia(temporada, recente) {
-    if (recente > temporada * 1.1) return `🔥 <b>${recente.toFixed(2)}</b>`; // Aumentou mais de 10%
-    if (recente < temporada * 0.9) return `❄️ <b>${recente.toFixed(2)}</b>`; // Caiu mais de 10%
-    return `⚖️ <b>${recente.toFixed(2)}</b>`; // Estável
+    if (recente > temporada * 1.1) return `🔥 <b>${recente.toFixed(2)}</b>`; 
+    if (recente < temporada * 0.9) return `❄️ <b>${recente.toFixed(2)}</b>`; 
+    return `⚖️ <b>${recente.toFixed(2)}</b>`; 
 }
 
 // ==========================================
@@ -132,14 +144,17 @@ const cabecalhoHTML = (titulo) => `
 const rodapeHTML = `</div></body></html>`;
 
 // ==========================================
-// FUNÇÕES DA API E AUXILIARES
+// FUNÇÕES DA API E AUXILIARES (COM DISFARCE)
 // ==========================================
 async function buscarJogosDoDia(data) {
     try {
         const url = `https://api.sofascore.com/api/v1/sport/football/scheduled-events/${data}`;
-        const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const res = await axios.get(url, { headers: headersDisfarce });
         return res.data.events || [];
-    } catch (e) { return []; }
+    } catch (e) {
+        console.error("Erro API Jogos:", e.message);
+        return []; 
+    }
 }
 
 async function puxarEstatisticasEquipe(teamId, tournamentId, seasonId) {
@@ -147,7 +162,7 @@ async function puxarEstatisticasEquipe(teamId, tournamentId, seasonId) {
     if (!teamId || !tournamentId || !seasonId) return d;
     try {
         const url = `https://api.sofascore.com/api/v1/team/${teamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`;
-        const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const res = await axios.get(url, { headers: headersDisfarce });
         const s = res.data.statistics; const m = s.matches || 1;
         return { 
             fez: parseFloat((s.goalsScored / m).toFixed(2)), 
@@ -159,35 +174,20 @@ async function puxarEstatisticasEquipe(teamId, tournamentId, seasonId) {
     } catch (e) { return d; }
 }
 
-// NOVA FUNÇÃO: Busca os placares dos Últimos 5 Jogos do time para calcular a Tendência
 async function puxarFormaGols(teamId) {
     try {
         const url = `https://api.sofascore.com/api/v1/team/${teamId}/events/last/0`;
-        const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const res = await axios.get(url, { headers: headersDisfarce });
         const eventos = res.data.events.filter(e => e.status.type === 'finished').slice(0, 5);
-        
         if (eventos.length === 0) return { fez: 0, sofreu: 0 };
         
-        let golsFeitos = 0;
-        let golsSofridos = 0;
-        
+        let gFez = 0; let gSofreu = 0;
         eventos.forEach(e => {
-            if (e.homeTeam.id == teamId) {
-                golsFeitos += e.homeScore.current || 0;
-                golsSofridos += e.awayScore.current || 0;
-            } else {
-                golsFeitos += e.awayScore.current || 0;
-                golsSofridos += e.homeScore.current || 0;
-            }
+            if (e.homeTeam.id == teamId) { gFez += e.homeScore.current || 0; gSofreu += e.awayScore.current || 0; } 
+            else { gFez += e.awayScore.current || 0; gSofreu += e.homeScore.current || 0; }
         });
-        
-        return { 
-            fez: parseFloat((golsFeitos / eventos.length).toFixed(2)), 
-            sofreu: parseFloat((golsSofridos / eventos.length).toFixed(2)) 
-        };
-    } catch (e) { 
-        return { fez: 0, sofreu: 0 }; 
-    }
+        return { fez: parseFloat((gFez / eventos.length).toFixed(2)), sofreu: parseFloat((gSofreu / eventos.length).toFixed(2)) };
+    } catch (e) { return { fez: 0, sofreu: 0 }; }
 }
 
 function filtrarJogosPorCategoria(jogos, categoria) {
@@ -293,7 +293,7 @@ app.get('/dashboard', async (req, res) => {
         const sH = await puxarEstatisticasEquipe(j.homeTeam.id, tId, sId);
         const sA = await puxarEstatisticasEquipe(j.awayTeam.id, tId, sId);
         
-        await delay(300); // Proteção Anti-Ban
+        await delay(300); 
 
         const projH = (sH.fez + sA.sofreu) / 2;
         const projA = (sA.fez + sH.sofreu) / 2;
@@ -311,10 +311,7 @@ app.get('/dashboard', async (req, res) => {
         if (probGols >= 85.0) topGols.push({ nome: nomeJogo, chance: probGols, detalhe: projGolsT.toFixed(2), link });
         if (probBtts >= 85.0) topBtts.push({ nome: nomeJogo, chance: probBtts, detalhe: `${projH.toFixed(1)} x ${projA.toFixed(1)}`, link });
         if (probCantos >= 85.0) topCantos.push({ nome: nomeJogo, chance: probCantos, detalhe: (sH.cantos + sA.cantos).toFixed(1), link });
-        
-        // CORTA-FOGO: Finalizações agora exigem 95% de assertividade matemática
         if (probChutes >= 95.0) topChutes.push({ nome: nomeJogo, chance: probChutes, detalhe: (sH.chutes + sA.chutes).toFixed(1), link });
-        
         if (probCartoes >= 85.0) topCartoes.push({ nome: nomeJogo, chance: probCartoes, detalhe: (sH.cartoes + sA.cartoes).toFixed(1), link });
     }
 
@@ -333,14 +330,13 @@ app.get('/dashboard', async (req, res) => {
     conteudoFinal += renderSniper("Ambas Marcam (+85%)", topBtts, "⚔️", "BTTS: Sim", "gols esperados");
     conteudoFinal += renderSniper("Over Escanteios (+85%)", topCantos, "🚩", "+8.5 Cantos", "cantos");
     conteudoFinal += renderSniper("Over Cartões (+85%)", topCartoes, "🟨", "+3.5 Cartões", "cartões");
-    // Finalizações com Badge Amarela para destacar que é +95%
     conteudoFinal += renderSniper("Finalizações Totais (+95%)", topChutes, "👟", "+19.5 Chutes", "chutes", "chutes");
 
     res.end(conteudoFinal + rodapeHTML);
 });
 
 // ==========================================
-// ROTA: DISPARO TELEGRAM (MENSAGENS SEPARADAS)
+// ROTA: DISPARO TELEGRAM
 // ==========================================
 app.use(express.urlencoded({ extended: true }));
 app.post('/enviar-telegram', async (req, res) => {
@@ -371,7 +367,6 @@ app.post('/enviar-telegram', async (req, res) => {
         if(probB >= 85) listaBtts.push(`▪️ ${jogoStr}\n📊 Chance: ${probB.toFixed(1)}%\n`);
         if(probC >= 85) listaCantos.push(`▪️ ${jogoStr}\n📊 Chance: ${probC.toFixed(1)}%\n`);
         if(probY >= 85) listaCartoes.push(`▪️ ${jogoStr}\n📊 Chance: ${probY.toFixed(1)}%\n`);
-        // Restrição rigorosa de 95% para chutes no Telegram
         if(probF >= 95) listaChutes.push(`▪️ ${jogoStr}\n📊 Chance: ${probF.toFixed(1)}%\n`);
     }
 
@@ -397,7 +392,7 @@ app.post('/enviar-telegram', async (req, res) => {
             let msgVazia = `🎯 *BILHETE SNIPER* 🎯\n📅 *Data:* ${dataFormatada}\n\n⚠️ Nenhuma entrada de elite encontrada hoje.\n\n🚀 _Scout Pro IA_`;
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: TELEGRAM_CHAT_ID, text: msgVazia, parse_mode: 'Markdown' });
         }
-        res.send("<script>alert('🚀 Relatórios enviados para o Telegram (Chutes filtrados em 95%)!'); window.history.back();</script>");
+        res.send("<script>alert('🚀 Relatórios enviados para o Telegram!'); window.history.back();</script>");
     } catch (e) { res.send("Erro ao enviar: " + e.message); }
 });
 
@@ -407,11 +402,8 @@ app.post('/enviar-telegram', async (req, res) => {
 app.get('/analisar', async (req, res) => {
     const { h, a, hId, aId, tId, sId } = req.query;
     
-    // Busca os dados Gerais (Temporada Completa)
     const sH = await puxarEstatisticasEquipe(hId, tId, sId);
     const sA = await puxarEstatisticasEquipe(aId, tId, sId);
-
-    // Busca os dados de Forma (Últimos 5 Jogos)
     const fH = await puxarFormaGols(hId);
     const fA = await puxarFormaGols(aId);
 
